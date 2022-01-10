@@ -786,3 +786,153 @@ const onSubmit = async () => {
   setUser(user);
 };
 ```
+## 9 Firebase로 사진 공우 앱 만들기2
+
+### 9.1 탭화면 구현하기
+- RootStack
+  - MainTab
+    - HomeStack
+      - FeedScreen
+    - MyProfileStack
+      - MyProfileScreen
+  - SignInScreen
+  - WelcomeScreen
+
+### 9.2 로그인 상태 유지하기
+- 로그인 상태를 유지해주기 위해서 현재 Firebase로 인증을 구현했기 때문에 AsyncStorage를 사용할 필요가 없다
+- onAuthStateChanged 함수의 인자에는 인증상태가 바뀔때마다 호출하고 싶은 콜백함수를 넣는다
+
+`screens/RootStack.js`
+
+```jsx
+useEffect(() => {
+  const unsubscribe = subscribeAuth(async currentUser => {
+    unsubscribe();
+    if (!currentUser) {
+      return;
+    }
+    const profile = await getUser(currentUser.uid);
+    if (!profile) {
+      return;
+    }
+    setUser(profile);
+  });
+}, [setUser]);
+```
+
+### 9.3 포스트 작성 기능 구현하기
+
+### 9.3.2 업로드할 사진 선택 또는 카메라 촬영하기
+- IOS: ActionSheetIOS를 통해 선택
+- 안드로이드: 선택 모달 만들기
+
+### 9.3.2.1 모달 만들기
+react-native 모달을 만들때는 주로 Modal 이라는 컴포넌트를 사용한다
+
+Modal컴포넌트
+- visible: 컴포넌트 보이고 숨기기 여부
+- animationType: 애니메이션 효과, 'slide' | 'fade' | 'none'(default)
+- transparent: 배경 투명도, 기본은 흰색배경
+- onRequestClose: 안드로이드에서 뒤로가기 액션시 호출되는 함수
+
+### 9.3.2.2 ActionSheetIOS로 선택하기
+
+### 9.3.2.3 react-native-image-picker 사용하기
+
+### 9.3.3 포스트 작성 화면 만들기
+
+- 이미지 선택시 RootStack 하위의 UploadScreen 페이지로 이동
+- 키보드 올라올때를 캐치해서 이미지 height 애니메이션 주어 줄이기
+
+`screens/UploadScreen.js`
+
+```jsx
+import { Animated, Keyboard } from 'react-native';
+...
+
+const animation = useRef(new Animated.Value(width)).current;
+useEffect(() => {
+  const didShow = Keyboard.addListener('keyboardDidShow', () =>
+    setIsKeyboardOpen(true),
+  );
+  const didHide = Keyboard.addListener('keyboardDidHide', () =>
+    setIsKeyboardOpen(false),
+  );
+
+  return () => {
+    didShow.remove();
+    didHide.remove();
+  };
+}, []);
+
+useEffect(() => {
+  Animated.timing(animation, {
+    toValue: isKeyboardOpen ? 0 : width,
+    useNativeDriver: false,
+    duration: 150,
+    delay: 100,
+  }).start();
+}, [isKeyboardOpen, width, animation]);
+
+...
+return (
+        <Animated.Image
+          source={{uri: res?.assets?.[0]?.uri}}
+          style={[styles.image, {height: animation}]}
+          resizeMode="cover"
+        />
+)
+```
+
+### 9.3.4 Firestore에 포스트 등록하기
+
+`lib/posts.js`
+```jsx
+import firestore from '@react-native-firebase/firestore';
+
+const postsCollection = firestore().collection('posts');
+
+export function createPost({user, photoURL, description}) {
+  return postsCollection.add({
+    user,         //UserContext에 담긴 현재 사용자 정보 객체
+    photoURL,     // 업로드할 이미지 주소
+    description,  // 이미지에 대한 설명 텍스트
+    createdAt: firestore.FieldValue.serverTimestamp(), // 서버측에서 해당 데이터의 값을 지정해줌
+  });
+}
+```
+
+파일명 변환하기 위해 라이브러리 설치
+> react-native에서 uuid 라이브러리가 작동하려면 사전에 react-native-random-values를 index.js에서 불러와야 한다
+
+```shell
+$ yarn add uuid react-native-get-random-values
+$ npx pod-install
+```
+
+firebase storage에 이미지 업로드 후에 store에 post 등록
+
+```jsx
+import storage from '@react-native-firebase/storage';
+import {v4} from 'uuid';
+import {createPost} from '../lib/posts';
+
+...
+
+const onSubmit = useCallback(async () => {
+  navigation.pop();
+  const asset = res.assets[0];
+
+  const extension = asset.fileName.split('.').pop();
+  const reference = storage().ref(`/photo/${user.id}/${v4()}.${extension}`);
+  if (Platform.OS === 'android') {
+    await reference.putString(asset.base64, 'base64', {
+      contentType: asset.type,
+    });
+  } else {
+    await reference.putFile(asset.uri);
+  }
+  const photoURL = await reference.getDownloadURL();
+  await createPost({description, photoURL, user});
+}, [res, user, description, navigation]);
+```
