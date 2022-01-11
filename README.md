@@ -770,10 +770,9 @@ const onSubmit = async () => {
     const reference = storage().ref(`/profile/${uid}.${extension}`);
 
     if (Platform.OS === 'android') {
-      await reference.putString(asset.base64, 'base64'),
-        {
-          contentType: asset.type,
-        };
+      await reference.putString(asset.base64, 'base64', {
+        contentType: asset.type,
+      });
     } else {
       await reference.putFile(asset.uri);
     }
