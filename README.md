@@ -785,7 +785,7 @@ const onSubmit = async () => {
   setUser(user);
 };
 ```
-## 9 Firebase로 사진 공우 앱 만들기2
+## 9 Firebase로 사진 공유 앱 만들기2
 
 ### 9.1 탭화면 구현하기
 - RootStack
