@@ -7,13 +7,15 @@ import {
   useWindowDimensions,
   Platform,
   KeyboardAvoidingView,
+  Text,
 } from 'react-native';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import {IconRightButton} from '../components/IconRightButton';
 import storage from '@react-native-firebase/storage';
-import {useUserContext} from '../context/UserContext';
+import {useUserContext} from '../contexts/UserContext';
 import {v4} from 'uuid';
 import {createPost} from '../lib/posts';
+import events from '../lib/events';
 // import events from '../lib/events';
 
 export const UploadScreen = () => {
@@ -41,7 +43,7 @@ export const UploadScreen = () => {
     }
     const photoURL = await reference.getDownloadURL();
     await createPost({description, photoURL, user});
-    // events.emit('refresh');
+    events.emit('refresh');
   }, [res, user, description, navigation]);
 
   useEffect(() => {

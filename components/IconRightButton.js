@@ -1,5 +1,5 @@
 import React from 'react';
-import {StyleSheet, View, Pressable, Platform} from 'react-native';
+import {StyleSheet, View, Pressable, Platform, Text} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 export const IconRightButton = ({name, color, onPress}) => {

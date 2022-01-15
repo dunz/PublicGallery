@@ -4,8 +4,8 @@ import {Alert, Keyboard, Platform, StyleSheet, Text, View} from 'react-native';
 import KeyboardAvoidingView from 'react-native/Libraries/Components/Keyboard/KeyboardAvoidingView';
 import {SignForm} from '../components/SignForm';
 import {SignButtons} from '../components/SignButtons';
-import {getUser, signIn, signUp} from '../lib/auth';
-import {useUserContext} from '../context/UserContext';
+import {getUser, signIn, signUp} from '../lib/users';
+import {useUserContext} from '../contexts/UserContext';
 
 export const SignInScreen = ({route, navigation}) => {
   const {isSignUp} = route.params ?? {};

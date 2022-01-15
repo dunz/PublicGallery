@@ -356,7 +356,7 @@ export const SignInScreen = ({navigation, route}) => {
 
 firebase의 auth 모듈을 이용해서 각 함수 만들기
 
-`lib/auth.js`
+`lib/users.js`
 
 ```js
 import auth from '@react-native-firebase/auth';
@@ -458,7 +458,7 @@ const onSubmit = async () => {
 
 ### 8.2.7 사용자 프로필 Firestore에 담기
 
-`lib/auth.js`
+`lib/users.js`
 
 ```jsx
 import firestore from '@react-native-firebase/firestore';
@@ -934,4 +934,554 @@ const onSubmit = useCallback(async () => {
   const photoURL = await reference.getDownloadURL();
   await createPost({description, photoURL, user});
 }, [res, user, description, navigation]);
+```
+
+### 9.4 포스트 목록 조회하기
+
+`lib/posts.js`
+
+```js
+const postsCollection = firestore().collection('posts');
+export async function getPosts({userId, mode, id} = {}) {
+  const snapshot = await postsCollection.get();
+  const posts = snapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data(),
+  }));
+  return posts;
+}
+```
+
+`postsCollection.get()`로 포스트가 저장되었을 당시의 스냅샷 목록데이터를 가져온 후에 각 객체에 id를 추가하여 반환해준다
+
+### 9.4.3 FeedScreen에서 getPost 호출 후 FlatList로 보여주기
+
+### 9.4.4 페이지네이션 및 시간순 정렬하기
+
+### 9.4.4.1 정렬 및 불러오는 수 제한하기
+
+`lib/posts.js`
+
+```jsx
+export const PAGE_SIZE = 3;
+export async function getPosts({userId, mode, id} = {}) {
+  const snapshot = await postsCollection
+    .orderBy('createdAt', 'desc')
+    .limit(PAGE_SIZE)
+    .get();
+  const posts = snapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data(),
+  }));
+  return posts;
+}
+```
+
+### 9.4.4.2 포스트 더 불러오기
+
+`lib/posts.js`
+```js
+const cursorDoc = await postsCollection.doc(id).get();
+const snapshot = await postsCollection
+.orderBy('createdAt', 'desc')
+.startAfter(cursorDoc)
+.limit(PAGE_SIZE)
+.get();
+```
+
+- .startAfter(cursorDoc): cursorDoc 를 제외한 이후의 데이터 조회 
+- .startAt(cursorDoc): cursorDoc 를 포함한 이후의 데이터 조회
+
+`screens/FeedScreen.js`
+```jsx
+const [noMorePost, setNoMorePost] = useState(false);
+
+useEffect(() => {
+  getPosts().then(setPosts);
+}, []);
+
+const onLoadMore = async () => {
+  if (noMorePost || !posts || posts.length < PAGE_SIZE) {
+    return;
+  }
+  const lastPost = posts[posts.length - 1];
+  const olderPosts = await getOlderPosts(lastPost.id);
+  if (olderPosts.length < PAGE_SIZE) {
+    setNoMorePost(true);
+  }
+  setPosts(posts.concat(olderPosts));
+};
+
+return (
+  <FlatList
+    data={posts}
+    renderItem={renderItem}
+    keyExtractor={item => item.id}
+    contentContainerStyle={styles.container}
+    onEndReached={onLoadMore}
+    onEndReachedThreshold={0.75}
+    ListFooterComponent={
+      !noMorePost && (
+        <ActivityIndicator style={styles.spinner} size={32} color="#6200ee" />
+      )
+    }
+  />
+);
+```
+
+- onEndReached: 스크롤 하단으로 내릴때 호출되는 이벤트
+- onEndReachedThreshold: 스크롤 하단 이벤트가 실행될 거리 입력
+- ListFooterComponent: 리스트의 하단에 노출해줄 컴포넌트
+
+### 9.4.4.3 최근 작성한 포스트 불러오기
+
+`lib/posts.js`
+```js
+const cursorDoc = await postsCollection.doc(id).get();
+const snapshot = await postsCollection
+.orderBy('createdAt', 'desc')
+.endBefore(cursorDoc)
+.limit(PAGE_SIZE)
+.get();
+```
+
+- .endBefore(cursorDoc): cursorDoc 를 제외한 이전의 데이터 조회
+- .endAt(cursorDoc): cursorDoc 를 포함한 이전의 데이터 조회
+
+`screens/FeedScreen.js`
+```jsx
+const [refreshing, setRefreshing] = useState(false);
+
+const onRefresh = async () => {
+  if (!posts || posts.length === 0 || refreshing) {
+    return;
+  }
+  const firstPost = posts[0];
+  setRefreshing(true);
+  const newerPosts = await getNewerPosts(firstPost.id);
+  setRefreshing(false);
+  if (newerPosts.length === 0) {
+    return;
+  }
+  setPosts(newerPosts.concat(posts));
+};
+
+return (
+  <FlatList
+    ...
+    refreshControl={
+      <RefreshControl refreshing={onRefresh} onRefresh={onRefresh} />
+    }
+  />
+);
+```
+
+- RefreshControl: `react-native`에서 제공하는 상단에서 내렸을때 반응하는 컨트롤 컴포넌트, `refreshing`, `onRefresh` 둘다 필요
+
+### 9.5 사용자 프로필 화면 구현하기
+
+### 9.5.1 Firestore 데이터 조회할 때 조건 추가하기
+
+`lib/posts.js`
+```js
+const snapshot = await postsCollection
+...
+.where('user.id', '==', userId)
+.get();
+```
+
+### 9.5.2 포스트 조회 함수 리팩토링하기
+
+### 9.5.3 Firestore에서 색인 추가하기
+특정 조건이나 정렬로 사용하는 키를 색인으로 만들어야 한다 (성능최적화 관점)
+
+### 9.5.4 Profile 컴포넌트 만들기
+
+`Profile`을 공용으로 만든 후 `ProfileScreen`과 `MyProfileScreen`에서 사용
+
+### 9.5.5 그리드 뷰 만들기
+화면 3가로 3분한을 위해 `demensions` 활용
+
+```jsx
+const dimensions = useWindowDimensions();
+const size = (dimensions.width - 3) / 3;
+
+return (
+<Pressable
+  onPress={onPress}
+  style={({pressed}) => [
+    {
+      opacity: pressed ? 0.6 : 1,
+      width: size,
+      height: size,
+    },
+    styles.block,
+  ]}>
+  <Image
+    style={styles.image}
+    source={{uri: post.photoURL}}
+    resizeMethod="resize"
+    resizeMode="cover"
+  />
+</Pressable>
+);
+```
+
+### 9.5.6 페이지네이션 구현하기
+
+### 9.5.7 커스텀 Hook을 작성해 컴포넌트 리팩토링하기
+
+### 9.5.8 포스트 열기
+
+`screens/PostScreen.js`
+
+```jsx
+<ScrollView contentContainerStyle={styles.contentContainer}>
+  <PostCard
+    user={post.user}
+    photoURL={post.photoURL}
+    description={post.description}
+    createdAt={post.createdAt}
+    id={post.id}
+  />
+</ScrollView>
+```
+
+텍스트가 길어질 경우 스크롤을 발생시키기 위해 `ScrollView`사용
+
+### 9.5.9 내 프로필 화면 구현하기
+`useNavigationState`를 사용해 현재 네비게이션에 대한 정보를 가져올수있다
+
+```jsx
+const routeNames = useNavigationState(state => state.routeNames);
+```
+
+### 9.6 포스트 수정 및 삭제 기능 구현하기
+
+더보기 버튼 추가
+
+```jsx
+<Pressable hitSlop={8}>
+  <Icon name="more-vert" size={20} />
+</Pressable>
+```
+
+- hitSlop:(number | {bottom: number, left: number, right: number, top: number})  
+컴포넌트가 차지하는 영역은 그대로 유지하고 터치할수 있는 영역만 각 방향으로 지정한 수치만큼 늘려준다
+
+### 9.6.1 재사용할 수 있는 모달 만들기
+
+### 9.6.2 사용자에게 수정 및 삭제 물어보기
+
+`usePostActions` 커스텀 훅 추가 
+
+### 9.6.3 포스트 삭제 기능 구현하기
+
+`lib/posts.js`
+
+```js
+export function removePost(id) {
+  return postsCollection.doc(id).delete();
+}
+```
+
+### 9.6.4 포스트 설명 수정 기능 구현하기
+
+`lib/posts.js`
+```js
+export function updatePost({id, description}) {
+  return postsCollection.doc(id).update({
+    description,
+  });
+}
+```
+
+### 9.7 EventEmitter로 다른 화면 간 흐름 제어하기
+
+### 9.7.1 EventEmitter3 설치 및 적용하기
+```shell
+$ yarn add eventemitter3
+```
+
+### 9.7.2 포스트 작성 후 업데이트하기
+
+이벤트 등록 및 해제 처리 하기 
+```js
+useEffect(() => {
+  events.addListener('refresh', onRefresh);
+  return () => {
+    events.removeListener('refresh', onRefresh);
+  };
+}, [onRefresh]);
+```
+
+매번 두벌씩 해제 코드를 넣어주는게 귀찮다. 그래서 한단계 더 나아가서 `events.addListener('refresh', onRefresh);`코드가 해제 리스너를 리턴하도록 하자.
+그러기 위해서는 이벤트 등록후 해제를 리턴해주는 별도의 함수를 만든다
+
+```js
+export const addListener = (eventName, callback) => {
+  events.addListener(eventName, callback);  // 이벤트 등록 실행
+  return () => {    // 이벤트 해제 실행 함수를 리턴
+    events.removeListener(eventName, callback);
+  };
+};
+```
+`eventName, callback`중복 코드가 발생하고 3, 4 번째 인자 대응 안되있기에 개선하면서 동시에 간소화 처리
+
+```js
+export const addListener = (...params) => {
+  events.addListener(...params);
+  return events.removeListener.bind(events, ...params);
+};
+```
+
+호출해주는 `useEffect` 부분 변경
+
+```js
+useEffect(() => {
+  const removeListener = addListener('refresh', onRefresh);
+  return () => {
+    removeListener();
+  };
+}, [onRefresh]);
+```
+
+조금더 간소화를 해보자
+
+```js
+useEffect(() => addListener('refresh', onRefresh), [onRefresh]);
+```
+
+끝
+
+### 9.7.3 포스트 삭제 후 목록에서 제거하기
+
+`hooks/usePostActions.js`
+```js
+const remove = async () => {
+  await removePost(id);
+
+  // 현재 단일 포스트 조회 화면이라면 뒤로가기
+  if (route.name === 'Post') {
+    navigation.pop();
+  }
+
+  events.emit('removePost', id);
+};
+```
+
+`screens/FeedScreen.js`, `components/Profile.js`
+```jsx
+useEffect(() => {
+  const removeRefresh = addListener('refresh', onRefresh);
+  const removeRemovePost = addListener('removePost', removePost);
+  return () => {
+    removeRefresh();
+    removeRemovePost();
+  };
+}, [onRefresh]);
+```
+
+### 9.7.4 리팩토링하기
+
+`useEffect`를 실행해주는 `usePostsEventEffect`훅 만들기
+
+`hooks/usePostsEventEffect.js`
+```js
+import {useEffect} from 'react';
+import {addListener} from '../lib/events';
+
+export const usePostsEventEffect = ({
+  refresh,
+  removePost,
+  updatePost,
+  enabled,
+}) => {
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+    const removeRefresh = addListener('refresh', refresh);
+    const removeRemovePost = addListener('removePost', removePost);
+    return () => {
+      removeRefresh();
+      removeRemovePost;
+    };
+  }, [refresh, removePost, updatePost, enabled]);
+};
+```
+
+`usePosts`훅에서 `usePostsEventEffect`훅을 호출
+`hooks/usePosts.js`
+```jsx
+export const usePosts = userId => {
+  ...
+  usePostsEventEffect({
+    refresh: onRefresh,
+    removePost,
+    enabled: !userId || userId === user.id,
+  });
+}
+```
+
+### 9.7.5 포스트 수정 후 업데이트하기
+
+### 9.8 설정화면 만들기
+
+`screens/ SettingScreen.js`
+```jsx
+import React from 'react';
+import {StyleSheet, View, Text, Pressable, Platform} from 'react-native';
+import {useUserContext} from '../contexts/UserContext';
+import {signOut} from '../lib/users';
+
+export const SettingScreen = () => {
+  const {setUser} = useUserContext();
+
+  const onLogout = async () => {
+    await signOut();
+    setUser(null);
+  };
+
+  return (
+    <View style={styles.block}>
+      <Pressable
+        onPress={onLogout}
+        style={({pressed}) => [
+          styles.item,
+          pressed && Platform.select({ios: {opacity: 0.5}}),
+        ]}
+        android_ripple={{
+          color: '#eee',
+        }}>
+        <Text>로그아웃</Text>
+      </Pressable>
+    </View>
+  );
+};
+```
+
+### 9.9 Firestore 보안 설정하기
+
+```
+match /posts/{post} {
+  allow get;                                                            // 단일 조회 모두 허용
+  allow list;                                                           // 리스트 조회 모두 허용
+  allow create: if request.resource.data.user.id == request.auth.uid    // 요청 들어온 post 데이터의 user.id와 로그인한 유저의 uid 비교
+  allow delete, update: if resource.data.user.id == request.auth.uid    // 저장된 post 데이터의 user.id와 로그인한 유저의 uid 비교
+}
+match /users/{user} {
+  allow read;                                 // read는 get과 list를 포함하는 권한
+  allow write: if request.auth.uid == user;   // write는 create, update, delete를 포함하는 권한
+}
+```
+
+### 9.10 Splash 화면 만들기
+
+Splash화면은 앱을 구돈한 후 필요한 로딩이 끝날 때까지 전체화면을 가리는 화면
+
+#### Android 설정
+
+```shell
+$ yarn add react-native-splash-screen
+```
+1. `http://bit.ly/publicgallery-splash`경로에서 압축파일 다운로드
+2. 안드로이드 폴더안에있는 폴더들을 `android/app/src/main/res` 경로에 복사
+3. `android/app/src/main/java/com/publicgallerydunz/MainActivity.java` 파일에 코드 추가
+4. ```java
+    import android.os.Bundle;
+    import org.devio.rn.splashscreen.SplashScreen;
+    ...
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+    SplashScreen.show(this);  // here
+    super.onCreate(savedInstanceState);
+    }
+    ```
+5. `android/app/src/main/res/layout/launch_screen.xml` 파일 추가
+6. ```xml
+   <?xml version="1.0" encoding="utf-8"?>
+    <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_centerInParent="false"
+    android:layout_centerHorizontal="true"
+    android:layout_centerVertical="true"
+    android:background="#6200EE"
+    android:gravity="center_vertical"
+    android:orientation="vertical">
+    
+        <ImageView
+            android:id="@+id/imageView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:src="@drawable/splash_icon" />
+    </RelativeLayout>
+  ```
+
+안드로이드 레이아웃 시스템 가이드
+https://developer.android.com/guide/topics/ui/declaring-layout
+
+#### IOS 설정
+
+1. `ios/PublicGalleryDunz/AppDelegate.m` 파일에 코드 추가
+2. Xcode로 `ios/PublicGalleryDunz.xcworkspace` 열기
+3. 좌측 사이드바의 `Image.xcassets`을 선택 후 내부에 + 누른뒤 `ImageSet` 누르기
+4. UI에서 Image를 더블클릭해 이름 변경하기
+5. 3개의 빈박으에 앞에서 내려받은 이미지들을 `splash_icon`, `splash_icon@2x`, `splash_icon@3x` 순서로 드래그앤 드롭하기
+6. 좌측 사이드바의 `LaunchScreen.styroboard` 선택하기
+7. 내부에서 View Controller Scene, View Controller, View를 펼치기
+8. 우측상단의 +누르고 Image View를 View 폴더 내부로 드래그앤 드롭하기
+9. Image View에서 PublicGAllery<닉네임>, Powered by React Native 지우기
+10. 가운데 이미지 선택 후 우측 상단의 Image 속성애서 만든 SplashIcon 선택하기
+11. 하단의 직사각형 두개 있는 아이콘을 누르고 Horizontally in Container, Vertically in Container를 0으로 정한후 Add 2 Constraints 눌러서 가운데 정렬하기
+12. 내부의 View 선택 후 Background 속성에서 Custom 지정후 나타난 팔레트에서 두번째 탭에 Hex Color 값에 `6200ee`입력하여후 Enter 쳐서 배경색 맞추기
+13. `command` + `S`를 눌러 저장후 `yarn ios`로 ios 앱 다시 구동하기  
+
+`ios/PublicGalleryDunz/AppDelegate.m`
+```m
+#import <RNSplashScreen.h>
+...
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
+{
+#ifdef FB_SONARKIT_ENABLED
+  InitializeFlipper(application);
+#endif
+[RNSplashScreen show];
+return YES;
+```
+
+### 9.10.3 원하는 시점에 Splash 화면 숨기기
+
+`screens/RootStack.js`
+```jsx
+import SplashScreen from 'react-native-splash-screen';
+...
+useEffect(() => {
+  const unsubscribe = subscribeAuth(async currentUser => {
+    unsubscribe();
+    if (!currentUser) {
+      SplashScreen.hide();
+      return;
+    }
+    const profile = await getUser(currentUser.uid);
+    if (!profile) {
+      return;
+    }
+    setUser(profile);
+  });
+}, [setUser]);
+```
+
+`screens/FeedScreen.js`
+```jsx
+const {posts, noMorePost, onLoadMore, onRefresh} = usePosts();
+
+const postsReady = posts !== null;
+useEffect(() => {
+  if (postsReady) {
+    SplashScreen.hide();
+  }
+}, [postsReady]);
 ```
